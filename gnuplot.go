@@ -23,12 +23,20 @@ type Dataset struct {
 	Data  [][2]float64
 }
 
+type Scale int
+
+const (
+	ScaleLin Scale = iota
+	ScaleLog
+	ScaleDb
+)
+
 type Plot2D struct {
 	Title    string
 	XLabel   string
 	YLabel   string
-	XLog     bool
-	YLog     bool
+	XScale   Scale // Linear or logarithmic only
+	YScale   Scale
 	Grid     bool
 	Datasets []*Dataset
 }
@@ -48,12 +56,13 @@ func (p *Plot2D) Exec() (*exec.Cmd, error) {
 		fmt.Fprintf(&script, "set ylabel \"%s\"\n", p.YLabel)
 	}
 
-	if p.XLog || p.YLog {
+	if p.XScale == ScaleLog || p.YScale == ScaleLog {
 		var axes string
-		if p.XLog {
+		if p.XScale == ScaleLog {
 			axes = "x"
 		}
-		if p.YLog {
+
+		if p.YScale == ScaleLog {
 			axes += "y"
 		}
 		fmt.Fprintf(&script, "set logscale %s\n", axes)
@@ -81,7 +90,15 @@ func (p *Plot2D) Exec() (*exec.Cmd, error) {
 		if style == "" {
 			style = StyleLines
 		}
-		plotspec += fmt.Sprintf("\"-\" using 1:2 %s with %s", titlespec, style)
+
+		var usingspec string
+		if p.YScale == ScaleDb {
+			usingspec = "1:(20*log10(column(2)))"
+		} else {
+			usingspec = "1:2"
+		}
+
+		plotspec += fmt.Sprintf("\"-\" using %s %s with %s", usingspec, titlespec, style)
 
 		if ds.Color != nil {
 			plotspec += fmt.Sprintf(" linecolor \"%s\"", ds.Color.Color())
