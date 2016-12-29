@@ -22,6 +22,17 @@ func (r RGB) Color() string {
 	return fmt.Sprintf("#%02x%02x%02x", r.R, r.G, r.B)
 }
 
+type RGBA struct {
+	R uint8
+	G uint8
+	B uint8
+	A uint8
+}
+
+func (r RGBA) Color() string {
+	return fmt.Sprintf("#%02x%02x%02x%02x", r.A, r.R, r.G, r.B)
+}
+
 var (
 	ColorWhite           NamedColor = "white"
 	ColorBlack           NamedColor = "black"
