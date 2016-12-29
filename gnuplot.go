@@ -57,13 +57,13 @@ const (
 )
 
 type Plot2D struct {
-	Title    string
-	XLabel   string
-	YLabel   string
-	XScale   Scale // Linear or logarithmic only
-	YScale   Scale
-	Grid     bool
-	PlotData []*Plot2Data
+	Title  string
+	XLabel string
+	YLabel string
+	XScale Scale // Linear or logarithmic only
+	YScale Scale
+	Grid   bool
+	Data   []*Plot2Data
 }
 
 func (p *Plot2D) Exec() (*exec.Cmd, error) {
@@ -99,7 +99,7 @@ func (p *Plot2D) Exec() (*exec.Cmd, error) {
 
 	// Prepare plot command
 	var plotspec string
-	for _, pd := range p.PlotData {
+	for _, pd := range p.Data {
 		if plotspec != "" {
 			plotspec += ", "
 		}
@@ -132,7 +132,7 @@ func (p *Plot2D) Exec() (*exec.Cmd, error) {
 
 	fmt.Fprintf(&script, "plot %s\n", plotspec)
 
-	for _, pd := range p.PlotData {
+	for _, pd := range p.Data {
 		for i := 0; i < pd.Data.Len(); i++ {
 			val := pd.Data.At(i)
 			fmt.Fprintf(&script, "%f %f\n", val[0], val[1])
