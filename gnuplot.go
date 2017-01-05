@@ -3,6 +3,8 @@ package gnuplot
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 )
@@ -66,7 +68,22 @@ type Plot2D struct {
 	Data   []*Plot2Data
 }
 
-func (p *Plot2D) Exec() (*exec.Cmd, error) {
+type Cmd struct {
+	cmd      *exec.Cmd
+	tmpFiles []*os.File
+	term     chan struct{}
+}
+
+func (c *Cmd) Close() error {
+	close(c.term)
+	err := c.cmd.Wait()
+	for _, f := range c.tmpFiles {
+		os.Remove(f.Name())
+	}
+	return err
+}
+
+func (p *Plot2D) Exec() (*Cmd, error) {
 	var script bytes.Buffer
 
 	if p.Title != "" {
@@ -97,9 +114,26 @@ func (p *Plot2D) Exec() (*exec.Cmd, error) {
 		fmt.Fprintf(&script, "set grid\n")
 	}
 
+	tmpFiles := make([]*os.File, 0, len(p.Data))
+
 	// Prepare plot command
 	var plotspec string
 	for _, pd := range p.Data {
+
+		// Create data file
+		dataFile, err := ioutil.TempFile("", "plotdata")
+		if err != nil {
+			return nil, err
+		}
+
+		for i := 0; i < pd.Data.Len(); i++ {
+			val := pd.Data.At(i)
+			fmt.Fprintf(dataFile, "%f %f\n", val[0], val[1])
+		}
+		dataFile.Close()
+
+		tmpFiles = append(tmpFiles, dataFile)
+
 		if plotspec != "" {
 			plotspec += ", "
 		}
@@ -123,7 +157,7 @@ func (p *Plot2D) Exec() (*exec.Cmd, error) {
 			usingspec = "1:2"
 		}
 
-		plotspec += fmt.Sprintf("\"-\" using %s %s with %s", usingspec, titlespec, style)
+		plotspec += fmt.Sprintf("\"%s\" using %s %s with %s", dataFile.Name(), usingspec, titlespec, style)
 
 		if pd.Color != nil {
 			plotspec += fmt.Sprintf(" linecolor rgb \"%s\"", pd.Color.Color())
@@ -131,21 +165,31 @@ func (p *Plot2D) Exec() (*exec.Cmd, error) {
 	}
 
 	fmt.Fprintf(&script, "plot %s\n", plotspec)
-
-	for _, pd := range p.Data {
-		for i := 0; i < pd.Data.Len(); i++ {
-			val := pd.Data.At(i)
-			fmt.Fprintf(&script, "%f %f\n", val[0], val[1])
-		}
-		fmt.Fprintf(&script, "e\n")
-	}
-	fmt.Fprintf(&script, "pause mouse\n")
+	fmt.Fprintf(&script, "pause -1\n")
 
 	// Prepagre Gnuplot child
-	cmd := exec.Command("gnuplot", "-")
-	cmd.Stdin = &script
-	cmd.Stderr = os.Stderr
+	cmd := Cmd{
+		cmd:      exec.Command("gnuplot"),
+		term:     make(chan struct{}),
+		tmpFiles: tmpFiles,
+	}
+	cmd.cmd.Stderr = os.Stderr
+	pipe, err := cmd.cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
 
-	err := cmd.Start()
-	return cmd, err
+	err = cmd.cmd.Start()
+
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		io.Copy(pipe, &script)
+		<-cmd.term
+		pipe.Close()
+	}()
+
+	return &cmd, err
 }
